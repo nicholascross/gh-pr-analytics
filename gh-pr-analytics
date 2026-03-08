@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPOSITORY_ROOT="$(cd "$(dirname "$0")" && pwd)"
+BINARY_PATH="$REPOSITORY_ROOT/.build/release/gh-pr-analytics"
+
+if [[ ! -x "$BINARY_PATH" ]]; then
+  mkdir -p "$REPOSITORY_ROOT/.build/tmp" "$REPOSITORY_ROOT/.build/home"
+  TMPDIR="$REPOSITORY_ROOT/.build/tmp" HOME="$REPOSITORY_ROOT/.build/home" swift build --configuration release --disable-sandbox
+fi
+
+exec "$BINARY_PATH" "$@"
