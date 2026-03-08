@@ -2,6 +2,8 @@
 
 `gh-pr-analytics` is a GitHub command line extension for pull request process analytics over time.
 
+<img width="1400" height="900" alt="openclaw-trends" src="https://github.com/user-attachments/assets/b775db37-eeb0-460b-b2da-1ce30b32ad58" />
+
 ## Requirements
 
 - macOS 14 or newer
