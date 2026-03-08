@@ -17,9 +17,6 @@ let package = Package(
             name: "GHPRAnalyticsCLI",
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
-            ],
-            linkerSettings: [
-                .linkedLibrary("sqlite3")
             ]
         )
     ]

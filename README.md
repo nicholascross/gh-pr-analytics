@@ -111,7 +111,7 @@ Default store path:
 - `.../repository` (cloned source repository)
 - `.../analytics.swiftdata` (analytics store)
 
-If a legacy SQLite file exists at `.gh-pr-analytics/<owner>__<repo>.sqlite`, it is imported once on first open of the SwiftData store.
+The analytics store uses SwiftData at the configured `.swiftdata` path.
 
 ## Synchronization behavior
 

@@ -196,7 +196,7 @@ final class Application {
 
     private func resolveStorePath(explicitDatabasePath: String?, repository: String) throws -> String {
         if let explicitDatabasePath {
-            return swiftDataPath(from: explicitDatabasePath)
+            return explicitDatabasePath
         }
 
         let path = defaultWorkspaceStorePath(repository: repository)
@@ -208,33 +208,9 @@ final class Application {
         return path
     }
 
-    private func resolveLegacySQLitePath(explicitDatabasePath: String?, repository: String) -> String? {
-        if let explicitDatabasePath, explicitDatabasePath.lowercased().hasSuffix(".sqlite") {
-            return explicitDatabasePath
-        }
-
-        guard explicitDatabasePath == nil else {
-            return nil
-        }
-
-        let safeRepositoryIdentifier = repository.replacingOccurrences(of: "/", with: "__")
-        return ".gh-pr-analytics/\(safeRepositoryIdentifier).sqlite"
-    }
-
     private func defaultWorkspaceStorePath(repository: String) -> String {
         let safeRepositoryIdentifier = repository.replacingOccurrences(of: "/", with: "__")
         return ".gh-pr-analytics/workspaces/\(safeRepositoryIdentifier)/analytics.swiftdata"
-    }
-
-    private func swiftDataPath(from providedPath: String) -> String {
-        let lowercasedPath = providedPath.lowercased()
-        if lowercasedPath.hasSuffix(".sqlite") {
-            let extensionLength = ".sqlite".count
-            let prefix = providedPath.dropLast(extensionLength)
-            return "\(prefix).swiftdata"
-        }
-
-        return providedPath
     }
 
     private func openStore(repository: String, explicitDatabasePath: String?) throws -> AnalyticsStore {
@@ -242,106 +218,7 @@ final class Application {
         let store = try SwiftDataStore(path: storePath)
         try store.migrate()
 
-        let legacySQLitePath = resolveLegacySQLitePath(explicitDatabasePath: explicitDatabasePath, repository: repository)
-        try importLegacySQLiteDataIfNeeded(
-            repository: repository,
-            store: store,
-            storePath: storePath,
-            legacySQLitePath: legacySQLitePath
-        )
-
         return store
-    }
-
-    private func importLegacySQLiteDataIfNeeded(
-        repository: String,
-        store: AnalyticsStore,
-        storePath: String,
-        legacySQLitePath: String?
-    ) throws {
-        guard let legacySQLitePath else {
-            return
-        }
-
-        guard fileManager.fileExists(atPath: legacySQLitePath) else {
-            return
-        }
-
-        let storeAlreadyHasData = try store.pullRequestCount(repository: repository) > 0
-        guard !storeAlreadyHasData else {
-            return
-        }
-
-        let legacyDatabase = try SQLiteDatabase(path: legacySQLitePath)
-        let pullRequests = try legacyDatabase.fetchAllPullRequests(repository: repository)
-        let reviews = try legacyDatabase.fetchAllReviews(repository: repository)
-        let syncStates = try legacyDatabase.listSyncStates(repository: repository)
-
-        try store.inTransaction {
-            for pullRequest in pullRequests {
-                let metadata = PullRequestMetadata(
-                    number: pullRequest.number,
-                    createdAt: pullRequest.createdAt,
-                    closedAt: pullRequest.closedAt,
-                    mergedAt: pullRequest.mergedAt,
-                    state: pullRequest.state,
-                    updatedAt: pullRequest.updatedAt
-                )
-
-                try store.upsertPullRequest(
-                    repository: repository,
-                    metadata: metadata,
-                    reviewScanState: pullRequest.reviewScanState
-                )
-
-                if let firstApprovalAt = pullRequest.firstApprovalAt {
-                    let approvalEvent = ApprovalEvent(
-                        submittedAt: firstApprovalAt,
-                        reviewIdentifier: pullRequest.firstApprovalReviewIdentifier,
-                        actor: pullRequest.firstApprovalActor
-                    )
-                    try store.setFirstApproval(
-                        repository: repository,
-                        pullRequestNumber: pullRequest.number,
-                        approvalEvent: approvalEvent
-                    )
-                }
-            }
-
-            for review in reviews {
-                let reviewAuthor = review.authorLogin.map { PullRequestReviewAuthor(login: $0) }
-                let pullRequestReview = PullRequestReview(
-                    reviewIdentifier: review.reviewIdentifier,
-                    state: review.state,
-                    submittedAt: review.submittedAt,
-                    user: reviewAuthor
-                )
-
-                try store.upsertReview(
-                    repository: repository,
-                    pullRequestNumber: review.pullRequestNumber,
-                    review: pullRequestReview
-                )
-            }
-
-            for syncState in syncStates {
-                try store.upsertSyncState(
-                    repository: repository,
-                    phase: syncState.phase,
-                    mode: syncState.mode,
-                    cursor: syncState.cursor,
-                    lastSuccessAt: syncState.lastSuccessAt,
-                    watermarkUpdatedAt: syncState.watermarkUpdatedAt,
-                    status: syncState.status,
-                    error: syncState.error
-                )
-            }
-        }
-
-        fputs(
-            "Imported legacy SQLite analytics data from \(legacySQLitePath) into \(storePath)\n",
-            stderr
-        )
     }
 
     private func parsePhase(value: String) -> SyncPhaseOption {
