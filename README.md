@@ -200,6 +200,7 @@ Writes a PNG dashboard.
 - Cycle time distribution trend by period (p10, median, p90 merge hours)
 - Approval lag versus merge lag scatter plot
 - Open pull request age bucket snapshot
+- A concise interpretation guide beneath the dashboard panels
 
 ### `export pull-requests`
 

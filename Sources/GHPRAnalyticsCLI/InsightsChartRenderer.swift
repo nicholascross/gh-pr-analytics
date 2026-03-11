@@ -38,6 +38,19 @@ private struct InsightsDashboardView: View {
         "Repository: \(repository)  Granularity: \(granularity.rawValue)"
     }
 
+    private var chartPlotHeight: CGFloat {
+        250
+    }
+
+    private var interpretationLines: [String] {
+        [
+            "Funnel by cohort period starts with pull requests opened in each period and shows how many reached first approval, merged, or closed without merge.",
+            "Cycle time distribution tracks 10th percentile, 50th percentile, and 90th percentile merge times to show best case, typical case, and long tail behavior.",
+            "Approval lag versus merge lag compares time to first approval against time to merge from creation. Points near the diagonal merge soon after first approval, while points above it wait longer after approval.",
+            "Open pull request age buckets show backlog age. Growth in older buckets indicates review or merge flow is slowing."
+        ]
+    }
+
     private var funnelStageValues: [FunnelStageValue] {
         funnelRows.flatMap { row in
             [
@@ -90,7 +103,8 @@ private struct InsightsDashboardView: View {
                         openPullRequestAgeChartCard
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                insightsInterpretationCard
             }
             .padding(22)
         }
@@ -111,7 +125,7 @@ private struct InsightsDashboardView: View {
                     .position(by: .value("Stage", value.stage))
                 }
             }
-            .frame(height: 290)
+            .frame(height: chartPlotHeight)
             .chartLegend(position: .top, alignment: .leading)
             .chartForegroundStyleScale([
                 "Opened": Color.blue,
@@ -174,7 +188,7 @@ private struct InsightsDashboardView: View {
                     }
                 }
             }
-            .frame(height: 290)
+            .frame(height: chartPlotHeight)
             .chartLegend(position: .top, alignment: .leading)
             .chartForegroundStyleScale([
                 "P10": Color.teal,
@@ -221,7 +235,7 @@ private struct InsightsDashboardView: View {
                     .symbolSize(22)
                 }
             }
-            .frame(height: 290)
+            .frame(height: chartPlotHeight)
             .chartXAxis {
                 AxisMarks(values: .automatic(desiredCount: 6)) {
                     AxisGridLine()
@@ -254,7 +268,7 @@ private struct InsightsDashboardView: View {
                 )
                 .foregroundStyle(Color.purple.opacity(0.75))
             }
-            .frame(height: 290)
+            .frame(height: chartPlotHeight)
             .chartXAxis {
                 AxisMarks(values: openPullRequestAgeBuckets.map { $0.label }) {
                     AxisGridLine()
@@ -268,6 +282,25 @@ private struct InsightsDashboardView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var insightsInterpretationCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("How to read this report")
+                .font(.system(size: 15, weight: .semibold))
+
+            ForEach(interpretationLines, id: \.self) { line in
+                HStack(alignment: .top, spacing: 6) {
+                    Text("•")
+                    Text(line)
+                }
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
     }
 }
