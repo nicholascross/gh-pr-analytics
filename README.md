@@ -10,6 +10,22 @@
 - GitHub command line tool (`gh`) installed and authenticated
 - Network access to `api.github.com`
 
+## Installation
+
+Install the extension directly from GitHub:
+
+```bash
+gh extension install nicholascross/gh-pr-analytics
+```
+
+Verify the extension command is available:
+
+```bash
+gh pr-analytics --help
+```
+
+If the `gh-pr-analytics` launcher script runs outside a checked-out source tree, it now bootstraps itself on first run by cloning `https://github.com/nicholascross/gh-pr-analytics.git` into `~/.gh-pr-analytics/source` before building.
+
 Authentication resolution order:
 
 1. `GH_TOKEN`
@@ -35,7 +51,7 @@ Run initial collection:
 
 ```bash
 gh pr-analytics sync --repo owner/name --phase metadata --backfill
-gh pr-analytics sync --repo owner/name --phase reviews --backfill --resume --skip-closed-unmerged
+gh pr-analytics sync --repo owner/name --phase reviews --backfill --skip-closed-unmerged
 ```
 
 Generate outputs:
@@ -43,6 +59,7 @@ Generate outputs:
 ```bash
 gh pr-analytics report trends --repo owner/name --granularity month --format json
 gh pr-analytics report charts --repo owner/name --granularity month --output-path trend-progression.png
+gh pr-analytics report charts --repo owner/name --granularity month --chart-style insights --output-path pull-request-insights.png
 gh pr-analytics export pull-requests --repo owner/name --format csv
 ```
 
@@ -64,7 +81,7 @@ gh pr-analytics sync \
   [--database-path path] \
   [--phase metadata|reviews|all] \
   [--backfill] \
-  [--resume] \
+  [--no-resume] \
   [--skip-closed-unmerged] \
   [--from-date YYYY-MM-DD] \
   [--to-date YYYY-MM-DD] \
@@ -83,6 +100,7 @@ gh pr-analytics report charts \
   [--repo owner/name] \
   [--database-path path] \
   [--granularity week|month] \
+  [--chart-style trend|insights] \
   [--from-date YYYY-MM-DD] \
   [--to-date YYYY-MM-DD] \
   [--output-path path/to/chart.png] \
@@ -129,11 +147,12 @@ The analytics store uses SwiftData at the configured `.swiftdata` path.
 - Computes earliest approval event
 - Stores review records and first approval fields
 - Marks review scan state as complete
-- Uses resume cursor for continuation
+- Uses checkpoint cursor for continuation by default
 
 Performance-related options:
 
-- `--resume` continues from the last checkpoint
+- Resume behavior is enabled by default
+- `--no-resume` starts synchronization from the beginning and ignores checkpoints
 - `--skip-closed-unmerged` skips review fetches for pull requests closed without merge
 - Pagination stops early when a review page is not full
 
@@ -168,10 +187,19 @@ Outputs period rows with:
 
 ### `report charts`
 
-Writes a PNG dashboard with:
+Writes a PNG dashboard.
+
+`--chart-style trend` (default) renders:
 
 - Pull request volume by period (opened and merged)
 - Median durations by period (merge and first approval)
+
+`--chart-style insights` renders:
+
+- Funnel by created cohort period (opened, first approved, merged, closed without merge)
+- Cycle time distribution trend by period (p10, median, p90 merge hours)
+- Approval lag versus merge lag scatter plot
+- Open pull request age bucket snapshot
 
 ### `export pull-requests`
 
@@ -180,7 +208,8 @@ Outputs one row per pull request with lifecycle timestamps, first approval times
 ## Operational guidance
 
 - Use `Ctrl+C` to stop synchronization safely.
-- Resume with `--resume` to continue from checkpoints.
+- Resume continues from checkpoints by default.
+- Use `--no-resume` to restart a synchronization phase from the beginning.
 - Avoid force-killing unless necessary.
 
 ## Assumptions

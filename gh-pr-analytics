@@ -1,7 +1,34 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPOSITORY_ROOT="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIRECTORY="$(cd "$(dirname "$0")" && pwd)"
+DEFAULT_SOURCE_REPOSITORY_URL="https://github.com/nicholascross/gh-pr-analytics.git"
+SOURCE_REPOSITORY_URL="${GH_PR_ANALYTICS_SOURCE_REPOSITORY_URL:-$DEFAULT_SOURCE_REPOSITORY_URL}"
+BOOTSTRAP_SOURCE_DIRECTORY="${GH_PR_ANALYTICS_BOOTSTRAP_SOURCE_DIRECTORY:-$HOME/.gh-pr-analytics/source}"
+
+resolve_repository_root() {
+  if [[ -f "$SCRIPT_DIRECTORY/Package.swift" && -d "$SCRIPT_DIRECTORY/Sources/GHPRAnalyticsCLI" ]]; then
+    printf "%s\n" "$SCRIPT_DIRECTORY"
+    return 0
+  fi
+
+  if [[ -d "$BOOTSTRAP_SOURCE_DIRECTORY/.git" ]]; then
+    printf "%s\n" "$BOOTSTRAP_SOURCE_DIRECTORY"
+    return 0
+  fi
+
+  if [[ -e "$BOOTSTRAP_SOURCE_DIRECTORY" && ! -d "$BOOTSTRAP_SOURCE_DIRECTORY/.git" ]]; then
+    printf "Bootstrap source path exists but is not a git repository: %s\n" "$BOOTSTRAP_SOURCE_DIRECTORY" >&2
+    printf "Remove it or set GH_PR_ANALYTICS_BOOTSTRAP_SOURCE_DIRECTORY to a different path.\n" >&2
+    exit 1
+  fi
+
+  mkdir -p "$(dirname "$BOOTSTRAP_SOURCE_DIRECTORY")"
+  git clone "$SOURCE_REPOSITORY_URL" "$BOOTSTRAP_SOURCE_DIRECTORY" >&2
+  printf "%s\n" "$BOOTSTRAP_SOURCE_DIRECTORY"
+}
+
+REPOSITORY_ROOT="$(resolve_repository_root)"
 BINARY_PATH="$REPOSITORY_ROOT/.build/release/gh-pr-analytics"
 
 if [[ ! -x "$BINARY_PATH" ]]; then

@@ -13,13 +13,46 @@ struct TrendRow: Encodable {
     let approvalSampleSize: Int
 }
 
+struct FunnelRow {
+    let periodStart: Date
+    let pullRequestsOpened: Int
+    let pullRequestsFirstApproved: Int
+    let pullRequestsMerged: Int
+    let pullRequestsClosedWithoutMerge: Int
+}
+
+struct CycleDistributionRow {
+    let periodStart: Date
+    let mergeTimeP10Hours: Double?
+    let mergeTimeP50Hours: Double?
+    let mergeTimeP90Hours: Double?
+    let mergeSampleSize: Int
+}
+
+struct LagCorrelationPoint {
+    let pullRequestNumber: Int
+    let approvalLagHours: Double
+    let mergeLagHours: Double
+}
+
+struct OpenPullRequestAgeBucket {
+    let label: String
+    let pullRequestCount: Int
+}
+
 final class ReportingService {
     private let database: AnalyticsStore
     private let trendChartRenderer: TrendChartRenderer
+    private let insightsChartRenderer: InsightsChartRenderer
 
-    init(database: AnalyticsStore, trendChartRenderer: TrendChartRenderer = TrendChartRenderer()) {
+    init(
+        database: AnalyticsStore,
+        trendChartRenderer: TrendChartRenderer = TrendChartRenderer(),
+        insightsChartRenderer: InsightsChartRenderer = InsightsChartRenderer()
+    ) {
         self.database = database
         self.trendChartRenderer = trendChartRenderer
+        self.insightsChartRenderer = insightsChartRenderer
     }
 
     func exportPullRequests(repository: String, format: OutputFormat) throws {
@@ -116,29 +149,220 @@ final class ReportingService {
         }
     }
 
-    func renderTrendCharts(
+    func renderCharts(
         repository: String,
         granularity: TrendGranularity,
+        chartStyle: ChartStyle,
         dateBounds: DateBounds,
         outputPath: String,
         imageSize: CGSize
     ) throws {
         let pullRequests = try database.fetchAllPullRequests(repository: repository)
-        let trendRows = calculateTrendRows(
-            pullRequests: pullRequests,
-            granularity: granularity,
-            dateBounds: dateBounds
-        )
 
-        try trendChartRenderer.render(
-            repository: repository,
-            granularity: granularity,
-            trendRows: trendRows,
-            imageSize: imageSize,
-            outputPath: outputPath
-        )
+        switch chartStyle {
+        case .trend:
+            let trendRows = calculateTrendRows(
+                pullRequests: pullRequests,
+                granularity: granularity,
+                dateBounds: dateBounds
+            )
+
+            try trendChartRenderer.render(
+                repository: repository,
+                granularity: granularity,
+                trendRows: trendRows,
+                imageSize: imageSize,
+                outputPath: outputPath
+            )
+        case .insights:
+            let funnelRows = calculateFunnelRows(
+                pullRequests: pullRequests,
+                granularity: granularity,
+                dateBounds: dateBounds
+            )
+            let cycleDistributionRows = calculateCycleDistributionRows(
+                pullRequests: pullRequests,
+                granularity: granularity,
+                dateBounds: dateBounds
+            )
+            let lagCorrelationPoints = calculateLagCorrelationPoints(
+                pullRequests: pullRequests,
+                dateBounds: dateBounds
+            )
+            let openPullRequestAgeBuckets = calculateOpenPullRequestAgeBuckets(
+                pullRequests: pullRequests,
+                dateBounds: dateBounds,
+                now: Date()
+            )
+
+            try insightsChartRenderer.render(
+                repository: repository,
+                granularity: granularity,
+                funnelRows: funnelRows,
+                cycleDistributionRows: cycleDistributionRows,
+                lagCorrelationPoints: lagCorrelationPoints,
+                openPullRequestAgeBuckets: openPullRequestAgeBuckets,
+                imageSize: imageSize,
+                outputPath: outputPath
+            )
+        }
 
         fputs("Chart image written to \(outputPath)\n", stderr)
+    }
+
+    private func calculateFunnelRows(
+        pullRequests: [PullRequestSnapshot],
+        granularity: TrendGranularity,
+        dateBounds: DateBounds
+    ) -> [FunnelRow] {
+        var buckets: [String: (periodStartDate: Date, opened: Int, firstApproved: Int, merged: Int, closedWithoutMerge: Int)] = [:]
+
+        for pullRequest in pullRequests {
+            guard let createdAtDate = Timestamp.parse(pullRequest.createdAt), dateBounds.includes(createdAtDate) else {
+                continue
+            }
+
+            let periodStartDate = Self.periodStart(for: createdAtDate, granularity: granularity)
+            let periodKey = Timestamp.format(periodStartDate) ?? pullRequest.createdAt
+            var bucket = buckets[periodKey] ?? (periodStartDate, 0, 0, 0, 0)
+            bucket.opened += 1
+
+            if pullRequest.firstApprovalAt != nil {
+                bucket.firstApproved += 1
+            }
+
+            if pullRequest.mergedAt != nil {
+                bucket.merged += 1
+            } else if pullRequest.state.lowercased() == "closed" {
+                bucket.closedWithoutMerge += 1
+            }
+
+            buckets[periodKey] = bucket
+        }
+
+        return buckets
+            .values
+            .sorted { $0.periodStartDate < $1.periodStartDate }
+            .map { bucket in
+                FunnelRow(
+                    periodStart: bucket.periodStartDate,
+                    pullRequestsOpened: bucket.opened,
+                    pullRequestsFirstApproved: bucket.firstApproved,
+                    pullRequestsMerged: bucket.merged,
+                    pullRequestsClosedWithoutMerge: bucket.closedWithoutMerge
+                )
+            }
+    }
+
+    private func calculateCycleDistributionRows(
+        pullRequests: [PullRequestSnapshot],
+        granularity: TrendGranularity,
+        dateBounds: DateBounds
+    ) -> [CycleDistributionRow] {
+        var buckets: [String: (periodStartDate: Date, mergeHours: [Double])] = [:]
+
+        for pullRequest in pullRequests {
+            guard
+                let mergedAt = pullRequest.mergedAt,
+                let mergedAtDate = Timestamp.parse(mergedAt),
+                dateBounds.includes(mergedAtDate),
+                let mergeHours = Self.timeDifferenceInHours(startTimestamp: pullRequest.createdAt, endTimestamp: mergedAt)
+            else {
+                continue
+            }
+
+            let periodStartDate = Self.periodStart(for: mergedAtDate, granularity: granularity)
+            let periodKey = Timestamp.format(periodStartDate) ?? mergedAt
+            var bucket = buckets[periodKey] ?? (periodStartDate, [])
+            bucket.mergeHours.append(mergeHours)
+            buckets[periodKey] = bucket
+        }
+
+        return buckets
+            .values
+            .sorted { $0.periodStartDate < $1.periodStartDate }
+            .map { bucket in
+                CycleDistributionRow(
+                    periodStart: bucket.periodStartDate,
+                    mergeTimeP10Hours: Self.percentile(bucket.mergeHours, percentile: 0.10),
+                    mergeTimeP50Hours: Self.percentile(bucket.mergeHours, percentile: 0.50),
+                    mergeTimeP90Hours: Self.percentile(bucket.mergeHours, percentile: 0.90),
+                    mergeSampleSize: bucket.mergeHours.count
+                )
+            }
+    }
+
+    private func calculateLagCorrelationPoints(
+        pullRequests: [PullRequestSnapshot],
+        dateBounds: DateBounds
+    ) -> [LagCorrelationPoint] {
+        pullRequests.compactMap { pullRequest in
+            guard
+                let createdAtDate = Timestamp.parse(pullRequest.createdAt),
+                dateBounds.includes(createdAtDate),
+                let approvalLagHours = Self.timeDifferenceInHours(
+                    startTimestamp: pullRequest.createdAt,
+                    endTimestamp: pullRequest.firstApprovalAt
+                ),
+                let mergeLagHours = Self.timeDifferenceInHours(
+                    startTimestamp: pullRequest.createdAt,
+                    endTimestamp: pullRequest.mergedAt
+                )
+            else {
+                return nil
+            }
+
+            return LagCorrelationPoint(
+                pullRequestNumber: pullRequest.number,
+                approvalLagHours: approvalLagHours,
+                mergeLagHours: mergeLagHours
+            )
+        }
+    }
+
+    private func calculateOpenPullRequestAgeBuckets(
+        pullRequests: [PullRequestSnapshot],
+        dateBounds: DateBounds,
+        now: Date
+    ) -> [OpenPullRequestAgeBucket] {
+        var bucketCounts = [
+            OpenPullRequestAgeBucket(label: "0-1 days", pullRequestCount: 0),
+            OpenPullRequestAgeBucket(label: "1-3 days", pullRequestCount: 0),
+            OpenPullRequestAgeBucket(label: "3-7 days", pullRequestCount: 0),
+            OpenPullRequestAgeBucket(label: "7-14 days", pullRequestCount: 0),
+            OpenPullRequestAgeBucket(label: "14-30 days", pullRequestCount: 0),
+            OpenPullRequestAgeBucket(label: "30+ days", pullRequestCount: 0)
+        ]
+
+        for pullRequest in pullRequests {
+            guard
+                pullRequest.state.lowercased() == "open",
+                pullRequest.mergedAt == nil,
+                let createdAtDate = Timestamp.parse(pullRequest.createdAt),
+                dateBounds.includes(createdAtDate)
+            else {
+                continue
+            }
+
+            let ageDays = max(0.0, now.timeIntervalSince(createdAtDate) / 86_400.0)
+
+            switch ageDays {
+            case 0..<1:
+                bucketCounts[0] = OpenPullRequestAgeBucket(label: bucketCounts[0].label, pullRequestCount: bucketCounts[0].pullRequestCount + 1)
+            case 1..<3:
+                bucketCounts[1] = OpenPullRequestAgeBucket(label: bucketCounts[1].label, pullRequestCount: bucketCounts[1].pullRequestCount + 1)
+            case 3..<7:
+                bucketCounts[2] = OpenPullRequestAgeBucket(label: bucketCounts[2].label, pullRequestCount: bucketCounts[2].pullRequestCount + 1)
+            case 7..<14:
+                bucketCounts[3] = OpenPullRequestAgeBucket(label: bucketCounts[3].label, pullRequestCount: bucketCounts[3].pullRequestCount + 1)
+            case 14..<30:
+                bucketCounts[4] = OpenPullRequestAgeBucket(label: bucketCounts[4].label, pullRequestCount: bucketCounts[4].pullRequestCount + 1)
+            default:
+                bucketCounts[5] = OpenPullRequestAgeBucket(label: bucketCounts[5].label, pullRequestCount: bucketCounts[5].pullRequestCount + 1)
+            }
+        }
+
+        return bucketCounts
     }
 
     private func calculateTrendRows(

@@ -81,8 +81,8 @@ struct GHPRAnalyticsCommand: ParsableCommand {
         @Flag(name: .customLong("backfill"), help: "Run in backfill mode.")
         var backfill = false
 
-        @Flag(name: .customLong("resume"), help: "Resume from saved checkpoints when available.")
-        var resume = false
+        @Flag(name: .customLong("no-resume"), help: "Start synchronization from the beginning and ignore saved checkpoints.")
+        var noResume = false
 
         @Flag(name: .customLong("skip-closed-unmerged"), help: "Skip review enrichment for pull requests that are closed without merge.")
         var skipClosedUnmerged = false
@@ -102,7 +102,7 @@ struct GHPRAnalyticsCommand: ParsableCommand {
                 databasePathOverride: repositoryOptions.databasePath,
                 phaseValue: phase,
                 backfill: backfill,
-                resume: resume,
+                resume: !noResume,
                 skipClosedUnmergedPullRequests: skipClosedUnmerged,
                 fromDate: dateRangeOptions.fromDate,
                 toDate: dateRangeOptions.toDate,
@@ -149,7 +149,7 @@ struct GHPRAnalyticsCommand: ParsableCommand {
         struct Charts: ParsableCommand {
             static let configuration = CommandConfiguration(
                 commandName: "charts",
-                abstract: "Render trend progression charts to a PNG file."
+                abstract: "Render report charts to a PNG file."
             )
 
             @OptionGroup var repositoryOptions: RepositoryOptions
@@ -157,6 +157,12 @@ struct GHPRAnalyticsCommand: ParsableCommand {
 
             @Option(name: .customLong("granularity"), help: "Trend aggregation granularity: week or month.")
             var granularity: String = "week"
+
+            @Option(
+                name: .customLong("chart-style"),
+                help: "Chart style: trend (default) or insights."
+            )
+            var chartStyle: String = "trend"
 
             @Option(name: .customLong("output-path"), help: "Path to the PNG image file.")
             var outputPath: String = "trend-progression.png"
@@ -173,6 +179,7 @@ struct GHPRAnalyticsCommand: ParsableCommand {
                     repositoryOverride: repositoryOptions.repo,
                     databasePathOverride: repositoryOptions.databasePath,
                     granularityValue: granularity,
+                    chartStyleValue: chartStyle,
                     fromDate: dateRangeOptions.fromDate,
                     toDate: dateRangeOptions.toDate,
                     outputPath: outputPath,

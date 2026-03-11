@@ -120,6 +120,7 @@ final class Application {
         repositoryOverride: String?,
         databasePathOverride: String?,
         granularityValue: String,
+        chartStyleValue: String,
         fromDate: String?,
         toDate: String?,
         outputPath: String,
@@ -128,6 +129,7 @@ final class Application {
     ) throws {
         let repository = try resolveRepository(explicitRepository: repositoryOverride)
         let granularity = parseGranularity(value: granularityValue)
+        let chartStyle = parseChartStyle(value: chartStyleValue)
         let dateBounds = try parseDateBounds(fromDate: fromDate, toDate: toDate)
         let validatedWidth = try parseChartImageDimension(value: width, argumentName: "width")
         let validatedHeight = try parseChartImageDimension(value: height, argumentName: "height")
@@ -135,9 +137,10 @@ final class Application {
         let database = try openStore(repository: repository, explicitDatabasePath: databasePathOverride)
         let reportingService = ReportingService(database: database)
 
-        try reportingService.renderTrendCharts(
+        try reportingService.renderCharts(
             repository: repository,
             granularity: granularity,
+            chartStyle: chartStyle,
             dateBounds: dateBounds,
             outputPath: outputPath,
             imageSize: CGSize(width: validatedWidth, height: validatedHeight)
@@ -227,6 +230,10 @@ final class Application {
 
     private func parseGranularity(value: String) -> TrendGranularity {
         TrendGranularity(rawValue: value) ?? .week
+    }
+
+    private func parseChartStyle(value: String) -> ChartStyle {
+        ChartStyle(rawValue: value) ?? .trend
     }
 
     private func parseOutputFormat(value: String) -> OutputFormat {

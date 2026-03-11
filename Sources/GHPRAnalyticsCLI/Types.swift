@@ -22,6 +22,11 @@ enum TrendGranularity: String {
     case month
 }
 
+enum ChartStyle: String {
+    case trend
+    case insights
+}
+
 enum OutputFormat: String {
     case csv
     case json
