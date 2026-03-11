@@ -24,7 +24,7 @@ Verify the extension command is available:
 gh pr-analytics --help
 ```
 
-If the `gh-pr-analytics` launcher script runs outside a checked-out source tree, it now bootstraps itself on first run by cloning `https://github.com/nicholascross/gh-pr-analytics.git` into `~/.gh-pr-analytics/source` before building.
+If the `gh-pr-analytics` launcher script runs outside a checked-out source tree, it bootstraps itself on first run by cloning `https://github.com/nicholascross/gh-pr-analytics.git` into `~/.gh-pr-analytics/source` before building. On later runs, it rebuilds automatically whenever `Package.swift`, `Package.resolved`, or files in `Sources/` are newer than the compiled binary.
 
 Authentication resolution order:
 

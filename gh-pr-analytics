@@ -31,7 +31,33 @@ resolve_repository_root() {
 REPOSITORY_ROOT="$(resolve_repository_root)"
 BINARY_PATH="$REPOSITORY_ROOT/.build/release/gh-pr-analytics"
 
-if [[ ! -x "$BINARY_PATH" ]]; then
+binary_needs_rebuild() {
+  if [[ ! -x "$BINARY_PATH" ]]; then
+    return 0
+  fi
+
+  # Rebuild when tracked Swift package inputs are newer than the compiled binary.
+  local newer_input_path
+  newer_input_path="$(
+    find \
+      "$REPOSITORY_ROOT/Package.swift" \
+      "$REPOSITORY_ROOT/Package.resolved" \
+      "$REPOSITORY_ROOT/Sources" \
+      -type f \
+      -newer "$BINARY_PATH" \
+      -print \
+      -quit \
+      2>/dev/null || true
+  )"
+
+  if [[ -n "$newer_input_path" ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
+if binary_needs_rebuild; then
   mkdir -p "$REPOSITORY_ROOT/.build/tmp" "$REPOSITORY_ROOT/.build/home"
   TMPDIR="$REPOSITORY_ROOT/.build/tmp" HOME="$REPOSITORY_ROOT/.build/home" swift build --configuration release --disable-sandbox
 fi
